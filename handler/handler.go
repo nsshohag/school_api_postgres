@@ -4,27 +4,36 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
-)
-
-const (
-	DB_USER     = "sadat"
-	DB_PASSWORD = "11235813"
-	DB_NAME     = "school_db"
 )
 
 var db *sql.DB
 
 func initDB() {
 
+	err_env := godotenv.Load()
+	if err_env != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	// loading from .env
+	DB_USER := os.Getenv("DB_USER")
+	DB_PASSWORD := os.Getenv("DB_PASSWORD")
+	DB_NAME := os.Getenv("DB_NAME")
+	DB_HOST := os.Getenv("DB_HOST")
+	DB_PORT := os.Getenv("DB_PORT")
+
 	var err error
-	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s host=localhost port=5433 sslmode=disable",
-		DB_USER, DB_PASSWORD, DB_NAME)
+	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=disable",
+		DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT)
 
 	db, err = sql.Open("postgres", dbinfo)
 	if err != nil {
@@ -49,10 +58,10 @@ var wg = sync.WaitGroup{}
 
 func Handle() {
 
-	fmt.Println("Cool Cool")
-
+	fmt.Println("Server initialization starting...")
 	initDB()
 
+	// routes
 	r := mux.NewRouter()
 	r.HandleFunc("/students", getStudents_All).Methods("GET")
 	r.HandleFunc("/students", createStudent).Methods("POST")
@@ -61,6 +70,7 @@ func Handle() {
 	r.HandleFunc("/students/{id}", patchStudent).Methods("PATCH")
 	r.HandleFunc("/students/{id}", getStudents_One).Methods("GET")
 
+	// starting server on a port
 	wg.Add(1)
 	go func() {
 		log.Println("Server running on port 8080...")
@@ -70,9 +80,13 @@ func Handle() {
 		wg.Done()
 	}()
 
-	fmt.Println("Server Started")
+	fmt.Println("This waitgroup and goroutine is used to excute code after ListenAndServe as it is blcoking and falls into infinite loop for taking request")
 	wg.Wait()
 }
+
+// Fetch multiple rows --- db.Query
+// Fetch a single row --- db.QueryRow
+// Insert, update, delete --- db.Exec
 
 // GET --get all students
 func getStudents_All(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +124,8 @@ func getStudents_All(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST --insert a student
+// this inserts a single student so ignore it
+/*
 func createStudent(w http.ResponseWriter, r *http.Request) {
 	var s Student
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
@@ -117,6 +133,12 @@ func createStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch multiple rows --- db.Query
+	// Fetch a single row --- db.QueryRow
+	// Insert, update, delete --- db.Exec
+
+	// kintu eitate kaj korche karon database supports RETURNING (e.g., PostgreSQL
+	// but eita ar concern na karon this time I have modified the code so that multiple students can be inserted
 	err := db.QueryRow("INSERT INTO students (name, age, class) VALUES ($1, $2, $3) RETURNING id", s.Name, s.Age, s.Class).Scan(&s.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -134,6 +156,99 @@ func createStudent(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(s) //w.Write(jsonResponse)
+
+}
+*/
+
+func createStudent(w http.ResponseWriter, r *http.Request) {
+
+	/*
+		var students []Student
+			// zodi multiple object pathay [[{}]
+			err := json.NewDecoder(r.Body).Decode(&students)
+			if err != nil {
+				// {} - if decoding as an array fails tahole decode kortechias a single student object
+				var singleStudent Student
+				if err := json.NewDecoder(r.Body).Decode(&singleStudent); err != nil {
+					http.Error(w, "Invalid request payload", http.StatusBadRequest)
+					return
+				}
+				students = append(students, singleStudent) // Convert single student to array format
+			}
+	*/
+
+	//Read the request body once and store it because the previous won't work beacuse
+	//When you attempt to decode the request body the first time (as an array)
+	//it consumes the body, and the second attempt to decode it (as a single object) fails
+	//because the body is already empty.
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var students []Student
+
+	// Try to decode the stored body as an array of students
+	err = json.Unmarshal(body, &students)
+	if err != nil {
+		// If decoding as an array fails, try to decode as a single student object
+		var singleStudent Student
+		if err := json.Unmarshal(body, &singleStudent); err != nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			return
+		}
+		students = append(students, singleStudent) // Convert single student to array format
+	}
+
+	if len(students) == 0 {
+		http.Error(w, "No student data provided", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("INSERT INTO students (name, age, class) VALUES ($1, $2, $3) RETURNING id")
+	if err != nil {
+		http.Error(w, "Failed to prepare statement", http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	var insertedStudents []Student
+	for _, s := range students {
+		var id int
+		err := stmt.QueryRow(s.Name, s.Age, s.Class).Scan(&id)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to insert student: %v", err), http.StatusInternalServerError)
+			return
+		}
+		s.ID = id
+		insertedStudents = append(insertedStudents, s)
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		return
+	}
+
+	jsonResponse, err := json.Marshal(insertedStudents)
+	if err != nil {
+		http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
+		return
+	}
+	log.Println("Inserted students:\n", string(jsonResponse))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	w.Write(jsonResponse)
 
 }
 
