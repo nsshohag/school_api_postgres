@@ -8,19 +8,21 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" //
 )
 
 var db *sql.DB
 
 func initDB() {
 
-	err_env := godotenv.Load()
-	if err_env != nil {
+	errEnv := godotenv.Load()
+	if errEnv != nil {
 		log.Fatal("Error loading .env file")
 	}
 
@@ -31,22 +33,23 @@ func initDB() {
 	DB_HOST := os.Getenv("DB_HOST")
 	DB_PORT := os.Getenv("DB_PORT")
 
-	var err error
 	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=disable",
 		DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT)
 
+	var err error
 	db, err = sql.Open("postgres", dbinfo)
 	if err != nil {
 		log.Fatal("Failed to connect to the database:", err)
 	}
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatal("Failed to ping the database:", err)
+	errPing := db.Ping()
+	if errPing != nil {
+		log.Fatal("Failed to ping the database:", errPing)
 	}
 	fmt.Println("Successfully connected to the school_db database!")
 }
 
+// Student ... that holds data and key = `json:"id"` and so on if not provided then it would be ID
 type Student struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`
@@ -56,6 +59,7 @@ type Student struct {
 
 var wg = sync.WaitGroup{}
 
+// Handle ...
 func Handle() {
 
 	fmt.Println("Server initialization starting...")
@@ -63,12 +67,13 @@ func Handle() {
 
 	// routes
 	r := mux.NewRouter()
-	r.HandleFunc("/students", getStudents_All).Methods("GET")
-	r.HandleFunc("/students", createStudent).Methods("POST")
+	r.HandleFunc("/students", getStudentsAll).Methods("GET")
+	r.HandleFunc("/students", createStudentSingle).Methods("POST")
+	r.HandleFunc("/students/bulk", createStudentBulk).Methods("POST")
 	r.HandleFunc("/students/{id}", updateStudent).Methods("PUT")
 	r.HandleFunc("/students/{id}", deleteStudent).Methods("DELETE")
 	r.HandleFunc("/students/{id}", patchStudent).Methods("PATCH")
-	r.HandleFunc("/students/{id}", getStudents_One).Methods("GET")
+	r.HandleFunc("/students/{id}", getStudentOne).Methods("GET")
 
 	// starting server on a port
 	wg.Add(1)
@@ -78,6 +83,7 @@ func Handle() {
 			log.Fatal("Server failed to start:", err)
 		}
 		wg.Done()
+
 	}()
 
 	fmt.Println("This waitgroup and goroutine is used to excute code after ListenAndServe as it is blcoking and falls into infinite loop for taking request")
@@ -89,9 +95,34 @@ func Handle() {
 // Insert, update, delete --- db.Exec
 
 // GET --get all students
-func getStudents_All(w http.ResponseWriter, r *http.Request) {
+func getStudentsAll(w http.ResponseWriter, r *http.Request) {
 
-	rows, err := db.Query("SELECT * FROM students")
+	// Get page and limit from query parameters
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	// Set default values
+	page := 1
+	limit := 3
+
+	// Parse page number
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	// Parse limit
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	// Calculate offset
+	offset := (page - 1) * limit
+
+	rows, err := db.Query("SELECT * FROM students LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -124,9 +155,9 @@ func getStudents_All(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST --insert a student
-// this inserts a single student so ignore it
-/*
-func createStudent(w http.ResponseWriter, r *http.Request) {
+
+func createStudentSingle(w http.ResponseWriter, r *http.Request) {
+
 	var s Student
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -155,33 +186,106 @@ func createStudent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(s) //w.Write(jsonResponse)
+	//json.NewEncoder(w).Encode(s) //w.Write(jsonResponse)
 
 }
-*/
 
-func createStudent(w http.ResponseWriter, r *http.Request) {
+// func createStudent(w http.ResponseWriter, r *http.Request) {
 
-	/*
-		var students []Student
-			// zodi multiple object pathay [[{}]
-			err := json.NewDecoder(r.Body).Decode(&students)
-			if err != nil {
-				// {} - if decoding as an array fails tahole decode kortechias a single student object
-				var singleStudent Student
-				if err := json.NewDecoder(r.Body).Decode(&singleStudent); err != nil {
-					http.Error(w, "Invalid request payload", http.StatusBadRequest)
-					return
-				}
-				students = append(students, singleStudent) // Convert single student to array format
-			}
-	*/
+// 	/*
+// 		var students []Student
+// 			// zodi multiple object pathay [[{}]
+// 			err := json.NewDecoder(r.Body).Decode(&students)
+// 			if err != nil {
+// 				// {} - if decoding as an array fails tahole decode kortechias a single student object
+// 				var singleStudent Student
+// 				if err := json.NewDecoder(r.Body).Decode(&singleStudent); err != nil {
+// 					http.Error(w, "Invalid request payload", http.StatusBadRequest)
+// 					return
+// 				}
+// 				students = append(students, singleStudent) // Convert single student to array format
+// 			}
+// 	*/
 
-	//Read the request body once and store it because the previous won't work beacuse
-	//When you attempt to decode the request body the first time (as an array)
-	//it consumes the body, and the second attempt to decode it (as a single object) fails
-	//because the body is already empty.
+// 	//Read the request body once and store it because the previous won't work beacuse
+// 	//When you attempt to decode the request body the first time (as an array)
+// 	//it consumes the body, and the second attempt to decode it (as a single object) fails
+// 	//because the body is already empty.
 
+// 	body, err := io.ReadAll(r.Body)
+// 	if err != nil {
+// 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+// 		return
+// 	}
+// 	defer r.Body.Close()
+
+// 	var students []Student
+
+// 	// Try to decode the stored body as an array of students
+// 	err = json.Unmarshal(body, &students)
+// 	if err != nil {
+// 		// If decoding as an array fails, try to decode as a single student object
+// 		var singleStudent Student
+// 		if err := json.Unmarshal(body, &singleStudent); err != nil {
+// 			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+// 			return
+// 		}
+// 		students = append(students, singleStudent) // Convert single student to array format
+// 	}
+
+// 	if len(students) == 0 {
+// 		http.Error(w, "No student data provided", http.StatusBadRequest)
+// 		return
+// 	}
+
+// 	tx, err := db.Begin()
+// 	if err != nil {
+// 		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
+// 		return
+// 	}
+// 	defer tx.Rollback()
+
+// 	stmt, err := tx.Prepare("INSERT INTO students (name, age, class) VALUES ($1, $2, $3) RETURNING id")
+// 	if err != nil {
+// 		http.Error(w, "Failed to prepare statement", http.StatusInternalServerError)
+// 		return
+// 	}
+// 	defer stmt.Close()
+
+// 	var insertedStudents []Student
+// 	for _, s := range students {
+// 		var id int
+// 		err := stmt.QueryRow(s.Name, s.Age, s.Class).Scan(&id)
+// 		if err != nil {
+// 			http.Error(w, fmt.Sprintf("Failed to insert student: %v", err), http.StatusInternalServerError)
+// 			return
+// 		}
+// 		s.ID = id
+// 		insertedStudents = append(insertedStudents, s)
+// 	}
+
+// 	if err := tx.Commit(); err != nil {
+// 		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+// 		return
+// 	}
+
+// 	jsonResponse, err := json.Marshal(insertedStudents)
+// 	if err != nil {
+// 		http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
+// 		return
+// 	}
+// 	log.Println("Inserted students:\n", string(jsonResponse))
+
+// 	w.Header().Set("Content-Type", "application/json")
+// 	w.WriteHeader(http.StatusCreated)
+// 	w.Write(jsonResponse)
+
+// }
+
+// Bulk with batch because query size matters
+func createStudentBulk(w http.ResponseWriter, r *http.Request) {
+
+	// Read the request body once and store it
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -191,16 +295,15 @@ func createStudent(w http.ResponseWriter, r *http.Request) {
 
 	var students []Student
 
-	// Try to decode the stored body as an array of students
 	err = json.Unmarshal(body, &students)
 	if err != nil {
-		// If decoding as an array fails, try to decode as a single student object
 		var singleStudent Student
 		if err := json.Unmarshal(body, &singleStudent); err != nil {
 			http.Error(w, "Invalid request payload", http.StatusBadRequest)
 			return
 		}
-		students = append(students, singleStudent) // Convert single student to array format
+		// Convert single student to array format
+		students = append(students, singleStudent)
 	}
 
 	if len(students) == 0 {
@@ -213,32 +316,74 @@ func createStudent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
 		return
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() // Ensure the transaction is rolled back if anything goes wrong
 
-	stmt, err := tx.Prepare("INSERT INTO students (name, age, class) VALUES ($1, $2, $3) RETURNING id")
-	if err != nil {
-		http.Error(w, "Failed to prepare statement", http.StatusInternalServerError)
-		return
-	}
-	defer stmt.Close()
-
+	batchSize := 3 // batch size dietchi to bulk insert
 	var insertedStudents []Student
-	for _, s := range students {
-		var id int
-		err := stmt.QueryRow(s.Name, s.Age, s.Class).Scan(&id)
+
+	// Insert students in batches
+	for i := 0; i < len(students); i += batchSize {
+
+		end := i + batchSize
+		//
+		if end > len(students) { // this is for last batch
+			end = len(students)
+		}
+
+		batch := students[i:end] // Get the current batch of students
+
+		// Build the VALUES clause dynamically for the current batch
+		var valueStrings []string
+		var valueArgs []interface{}
+
+		for j, student := range batch {
+
+			valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d)", j*3+1, j*3+2, j*3+3)) // Create placeholders for each student example = ($1, $2, $3), ($4, $5, $6), )
+			valueArgs = append(valueArgs, student.Name, student.Age, student.Class)                  // Append the student data to the valueArgs slice
+		}
+
+		// Combine the query and VALUES clause
+		query := `
+			INSERT INTO students (name, age, class)
+			VALUES %s
+			RETURNING id
+		`
+		finalQuery := fmt.Sprintf(query, strings.Join(valueStrings, ", "))
+
+		// Execute the bulk insert query for the current batch
+		rows, err := tx.Query(finalQuery, valueArgs...)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to insert student: %v", err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Failed to execute bulk insert: %v", err), http.StatusInternalServerError)
 			return
 		}
-		s.ID = id
-		insertedStudents = append(insertedStudents, s)
+		defer rows.Close()
+
+		j := 0 // batch
+		// Collect the inserted IDs for the current batch
+		for rows.Next() {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				http.Error(w, fmt.Sprintf("Failed to scan inserted ID: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			insertedStudents = append(insertedStudents, Student{ID: id,
+				Name:  batch[j].Name,
+				Age:   batch[j].Age,
+				Class: batch[j].Class,
+			}) // Append the inserted student to the insertedStudents slice
+			j++
+		}
 	}
 
+	// Commit the transaction
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
 		return
 	}
 
+	// ekhane amra sudhu resposne dekhbo but pathabo na response to client
+	// zodio name dekhabe na sudhu id dekhabe karon return kori nai
 	jsonResponse, err := json.Marshal(insertedStudents)
 	if err != nil {
 		http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
@@ -246,10 +391,11 @@ func createStudent(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println("Inserted students:\n", string(jsonResponse))
 
-	w.Header().Set("Content-Type", "application/json")
+	// this not necessary in the case of insertion we dont need to send the result to the user
+	// Send the response to the client
+	// w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	w.Write(jsonResponse)
-
+	// w.Write(jsonResponse)
 }
 
 // PUT --update all the information of a student
@@ -277,9 +423,9 @@ func updateStudent(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Println(id, "id is updated with\n", string(jsonResponse))
 
-	w.Header().Set("Content-Type", "application/json")
+	//w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(s)
+	// json.NewEncoder(w).Encode(s)
 }
 
 // DELETE --delete a student from the database
@@ -372,7 +518,7 @@ func stringJoin(arr []string, sep string) string {
 }
 
 // GET --get information of a single student
-func getStudents_One(w http.ResponseWriter, r *http.Request) {
+func getStudentOne(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
