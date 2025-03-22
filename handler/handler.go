@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"database/sql"
@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"school_api_postgres/models"
+	"school_api_postgres/validation"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,14 +49,6 @@ func initDB() {
 		log.Fatal("Failed to ping the database:", errPing)
 	}
 	fmt.Println("Successfully connected to the school_db database!")
-}
-
-// Student ... that holds data and key = `json:"id"` and so on if not provided then it would be ID
-type Student struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Age   int    `json:"age"`
-	Class int    `json:"class"`
 }
 
 var wg = sync.WaitGroup{}
@@ -130,9 +124,9 @@ func getStudentsAll(w http.ResponseWriter, r *http.Request) {
 
 	defer rows.Close()
 
-	var students []Student
+	var students []models.Student
 	for rows.Next() {
-		var s Student
+		var s models.Student
 		if err := rows.Scan(&s.ID, &s.Name, &s.Age, &s.Class); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -158,8 +152,13 @@ func getStudentsAll(w http.ResponseWriter, r *http.Request) {
 
 func createStudentSingle(w http.ResponseWriter, r *http.Request) {
 
-	var s Student
+	var s models.Student
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := validation.ValidateStudent(s); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -293,11 +292,11 @@ func createStudentBulk(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var students []Student
+	var students []models.Student
 
 	err = json.Unmarshal(body, &students)
 	if err != nil {
-		var singleStudent Student
+		var singleStudent models.Student
 		if err := json.Unmarshal(body, &singleStudent); err != nil {
 			http.Error(w, "Invalid request payload", http.StatusBadRequest)
 			return
@@ -311,6 +310,14 @@ func createStudentBulk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate each student in the bulk data
+	for _, student := range students {
+		if err := validation.ValidateStudent(student); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid student data: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
@@ -319,7 +326,7 @@ func createStudentBulk(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback() // Ensure the transaction is rolled back if anything goes wrong
 
 	batchSize := 3 // batch size dietchi to bulk insert
-	var insertedStudents []Student
+	var insertedStudents []models.Student
 
 	// Insert students in batches
 	for i := 0; i < len(students); i += batchSize {
@@ -367,7 +374,7 @@ func createStudentBulk(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			insertedStudents = append(insertedStudents, Student{ID: id,
+			insertedStudents = append(insertedStudents, models.Student{ID: id,
 				Name:  batch[j].Name,
 				Age:   batch[j].Age,
 				Class: batch[j].Class,
@@ -403,8 +410,14 @@ func updateStudent(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	var s Student
+	var s models.Student
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate the student data
+	if err := validation.ValidateStudent(s); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -465,7 +478,7 @@ func patchStudent(w http.ResponseWriter, r *http.Request) {
 	var values []interface{}
 	values = append(values, id)
 
-	var s Student
+	var s models.Student
 	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -477,10 +490,19 @@ func patchStudent(w http.ResponseWriter, r *http.Request) {
 		values = append(values, s.Name)
 	}
 	if s.Age != 0 {
+
+		if err := validation.ValidateAge(s.Age); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		updates = append(updates, "age=$"+fmt.Sprint(len(values)+1))
 		values = append(values, s.Age)
 	}
 	if s.Class != 0 {
+		if err := validation.ValidateClass(s.Class); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		updates = append(updates, "class=$"+fmt.Sprint(len(values)+1))
 		values = append(values, s.Class)
 	}
@@ -522,7 +544,7 @@ func getStudentOne(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	var s Student
+	var s models.Student
 	err := db.QueryRow("SELECT * FROM students WHERE id=$1", id).Scan(&s.ID, &s.Name, &s.Age, &s.Class)
 	if err != nil {
 		if err == sql.ErrNoRows {
