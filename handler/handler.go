@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -8,11 +9,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"school_api_postgres/models"
 	"school_api_postgres/validation"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -61,26 +65,49 @@ func Handle() {
 
 	// routes
 	r := mux.NewRouter()
-	r.HandleFunc("/students", getStudentsAll).Methods("GET")
-	r.HandleFunc("/students", createStudentSingle).Methods("POST")
-	r.HandleFunc("/students/bulk", createStudentBulk).Methods("POST")
-	r.HandleFunc("/students/{id}", updateStudent).Methods("PUT")
-	r.HandleFunc("/students/{id}", deleteStudent).Methods("DELETE")
-	r.HandleFunc("/students/{id}", patchStudent).Methods("PATCH")
-	r.HandleFunc("/students/{id}", getStudentOne).Methods("GET")
+	v1 := r.PathPrefix("/api/v1").Subrouter()
+	v1.HandleFunc("/students", getStudentsAll).Methods("GET")
+	v1.HandleFunc("/students", createStudentSingle).Methods("POST")
+	v1.HandleFunc("/students/bulk", createStudentBulk).Methods("POST")
+	v1.HandleFunc("/students/{id}", updateStudent).Methods("PUT")
+	v1.HandleFunc("/students/{id}", deleteStudent).Methods("DELETE")
+	v1.HandleFunc("/students/{id}", patchStudent).Methods("PATCH")
+	v1.HandleFunc("/students/{id}", getStudentOne).Methods("GET")
 
+	// Create a server with a timeout for graceful shutdown
+	server := &http.Server{
+		Addr:    ":8080", // port
+		Handler: r,
+	}
 	// starting server on a port
 	wg.Add(1)
 	go func() {
 		log.Println("Server running on port 8080...")
-		if err := http.ListenAndServe(":8080", r); err != nil {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("Server failed to start:", err)
 		}
 		wg.Done()
 
 	}()
 
-	fmt.Println("This waitgroup and goroutine is used to excute code after ListenAndServe as it is blcoking and falls into infinite loop for taking request")
+	// Graceful shutdown
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
+	<-stopChan // Wait for interrupt signal
+	log.Println("Shutting down server...")
+
+	// Create a context with a timeout to allow ongoing requests to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown the server
+	if err := server.Shutdown(ctx); err != nil { // this waits here while context not done if all request are processed then stops the server immediately else wait for context time and then executes
+		log.Fatal("Server forced to shutdown:", err)
+	}
+
+	log.Println("Server gracefully stopped")
+
+	// fmt.Println("This waitgroup and goroutine is used to excute code after ListenAndServe as it is blcoking and falls into infinite loop for taking request")
 	wg.Wait()
 }
 
@@ -145,6 +172,8 @@ func getStudentsAll(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(students)
+
+	time.Sleep(5 * time.Second) // for graceful shutdown cheking
 
 }
 
@@ -363,7 +392,6 @@ func createStudentBulk(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Failed to execute bulk insert: %v", err), http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
 
 		j := 0 // batch
 		// Collect the inserted IDs for the current batch
@@ -381,6 +409,13 @@ func createStudentBulk(w http.ResponseWriter, r *http.Request) {
 			}) // Append the inserted student to the insertedStudents slice
 			j++
 		}
+
+		// Close the rows object for the current batch
+		// Else resource leak may happen
+		if err := rows.Close(); err != nil {
+			log.Printf("Error closing rows: %v", err)
+		}
+
 	}
 
 	// Commit the transaction
