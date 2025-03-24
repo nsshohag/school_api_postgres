@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,12 +19,88 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/mux"
+	"golang.org/x/time/rate"
+
+	//"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq" //
 )
 
 var db *sql.DB
+
+// simple token bucket limter didn't use
+/*
+var limiter = rate.NewLimiter(5, 10) // 10 requests per second, burst of 20
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.Allow() {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+*/
+
+// ip based limiter that I used
+func rateLimitMiddlewareClientIP(next http.Handler) http.Handler {
+
+	type client struct {
+		limiter  *rate.Limiter
+		lastSeen time.Time
+	}
+
+	var (
+		mu      sync.Mutex
+		clients = make(map[string]*client)
+	)
+
+	// ei go routine delete korteche map theke client er ip ar details
+	go func() {
+		for {
+
+			time.Sleep(time.Minute)
+			mu.Lock()
+
+			for ip, client := range clients {
+				if time.Since(client.lastSeen) > 3*time.Minute {
+					delete(clients, ip)
+				}
+			}
+			mu.Unlock()
+
+		}
+	}()
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			log.Printf("Error parsing IP: %v", err)
+			http.Error(w, "Too Many Requests", http.StatusInternalServerError)
+			return
+		}
+
+		_, found := clients[ip]
+
+		mu.Lock()
+		if !found {
+			clients[ip] = &client{limiter: rate.NewLimiter(3, 5)}
+		}
+		clients[ip].lastSeen = time.Now()
+
+		if !clients[ip].limiter.Allow() {
+			mu.Unlock()
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+
+		mu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
 
 func initDB() {
 
@@ -63,16 +140,47 @@ func Handle() {
 	fmt.Println("Server initialization starting...")
 	initDB()
 
+	/*
+		r := mux.NewRouter()
+		v1 := r.PathPrefix("/api/v1").Subrouter()
+		v1.HandleFunc("/students", getStudentsAll).Methods("GET")
+		v1.HandleFunc("/students", createStudentSingle).Methods("POST")
+		v1.HandleFunc("/students/bulk", createStudentBulk).Methods("POST")
+		v1.HandleFunc("/students/{id}", updateStudent).Methods("PUT")
+		v1.HandleFunc("/students/{id}", deleteStudent).Methods("DELETE")
+		v1.HandleFunc("/students/{id}", patchStudent).Methods("PATCH")
+		v1.HandleFunc("/students/{id}", getStudentOne).Methods("GET")
+	*/
 	// routes
-	r := mux.NewRouter()
-	v1 := r.PathPrefix("/api/v1").Subrouter()
-	v1.HandleFunc("/students", getStudentsAll).Methods("GET")
-	v1.HandleFunc("/students", createStudentSingle).Methods("POST")
-	v1.HandleFunc("/students/bulk", createStudentBulk).Methods("POST")
-	v1.HandleFunc("/students/{id}", updateStudent).Methods("PUT")
-	v1.HandleFunc("/students/{id}", deleteStudent).Methods("DELETE")
-	v1.HandleFunc("/students/{id}", patchStudent).Methods("PATCH")
-	v1.HandleFunc("/students/{id}", getStudentOne).Methods("GET")
+	r := chi.NewRouter()
+	r.Route("/api/v1", func(r chi.Router) { // Versioned routes under /api/v1
+
+		//r.Use(rateLimitMiddleware) // Apply rate limiting to all routes under /api/v1
+
+		// Group routes that need rate limiting
+		r.Group(func(r chi.Router) {
+			// Apply rate limiting only to these routes
+			r.Use(rateLimitMiddlewareClientIP)
+			//r.Use(rateLimitMiddleware)
+			r.Get("/students", getStudentsAll) //r.With(rateLimitMiddleware).Get("/students", getStudentsAll) // apply rate limiting to specific route
+
+		})
+
+		// Group for student creation (without rate limiting)
+		r.Group(func(r chi.Router) {
+			r.Post("/students", createStudentSingle)
+			r.Post("/students/bulk", createStudentBulk)
+		})
+
+		// Group for student modifications (without rate limiting)
+		r.Group(func(r chi.Router) {
+			r.Put("/students/{id}", updateStudent)
+			r.Delete("/students/{id}", deleteStudent)
+			r.Patch("/students/{id}", patchStudent)
+			r.Get("/students/{id}", getStudentOne)
+		})
+
+	})
 
 	// Create a server with a timeout for graceful shutdown
 	server := &http.Server{
@@ -173,7 +281,7 @@ func getStudentsAll(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(students)
 
-	time.Sleep(5 * time.Second) // for graceful shutdown cheking
+	//time.Sleep(5 * time.Second) // for graceful shutdown cheking
 
 }
 
