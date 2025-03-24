@@ -2,7 +2,7 @@
 
 ![School API Logo](https://miro.medium.com/v2/resize:fit:2000/format:webp/1*OcmVkcsM5BWRHrg8GC17iw.png)
 
-A simple RESTful API for managing students in a school database using **Go (Golang)**, **PostgreSQL**, and **Gorilla Mux**.
+A simple RESTful API for managing students in a school database using **Go (Golang)**, **PostgreSQL**, and **Go chi**.
 
 ## 🚀 Features
 
@@ -13,13 +13,14 @@ A simple RESTful API for managing students in a school database using **Go (Gola
 - **⚡ Bulk Insert:** Efficiently insert multiple records in one request.
 - **🔒 Environment Variables:** Securely manage database connection details.
 - **🗄️ PostgreSQL Database Connection:** Persistent data storage with PostgreSQL.
+- **🚯 IP-Based Rate Limiting:** Prevent abuse by limiting requests per IP.
 - **🛑 Graceful Shutdown:** Ensure smooth termination of the API.
 
 ---
 
 ## 🏗️ Tech Stack
 
-- **Backend:** Go (Golang), Gorilla Mux
+- **Backend:** Go (Golang), GO chi
 - **Database:** PostgreSQL
 - **Logging:** Log Package
 - **API Format:** RESTful, JSON
@@ -200,6 +201,25 @@ POST /api/v1/students/bulk
 
 ---
 -->
+
+## 🔍 Additional Features
+
+### 🗄️ PostgreSQL Database Connection
+The API connects to a **PostgreSQL** database for persistent data storage. Connection parameters are managed through environment variables to ensure security and flexibility.
+
+### 🚯 IP-Based Rate Limiting
+To prevent abuse, the API enforces **IP-based rate limiting**, restricting excessive requests from the same IP within a specific timeframe.
+
+### 🛑 Graceful Shutdown
+The API supports **graceful shutdown**, ensuring proper cleanup of resources when the server is stopped, preventing issues like lingering database connections. When the server gets a shutdown request, it finishes ongoing requests for a specific time, and during that time, it does not take any new requests.
+
+### 📜 Pagination
+The API implements **pagination** for efficient handling of large datasets, allowing clients to request data in smaller chunks for better performance.
+
+### ⚡ Bulk Insert with Batching
+Bulk insert allows efficiently adding multiple records in a single request, reducing the number of database transactions and improving performance. Also did batching so that query does not exceed.
+
+---
 
 ## 📜 License
 
