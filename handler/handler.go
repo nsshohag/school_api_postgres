@@ -79,7 +79,7 @@ func rateLimitMiddlewareClientIP(next http.Handler) http.Handler {
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			log.Printf("Error parsing IP: %v", err)
-			http.Error(w, "Too Many Requests", http.StatusInternalServerError)
+			http.Error(w, "Internal IP Parsing error", http.StatusInternalServerError)
 			return
 		}
 
