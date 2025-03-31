@@ -15,6 +15,9 @@ A simple RESTful API for managing students in a school database using **Go (Gola
 - **🗄️ PostgreSQL Database Connection:** Persistent data storage with PostgreSQL.
 - **🚯 IP-Based Rate Limiting:** Prevent abuse by limiting requests per IP.
 - **🛑 Graceful Shutdown:** Ensure smooth termination of the API.
+- **🐳 Docker Support:** Easily deploy the application using Docker.
+- **☸️ Kubernetes Deployment:** Scalable and manageable deployment in Kubernetes.
+- **🌐 Docker Hub Integration:** Uploaded images are available on Docker Hub.
 
 ---
 
@@ -22,6 +25,8 @@ A simple RESTful API for managing students in a school database using **Go (Gola
 
 - **Backend:** Go (Golang), GO chi
 - **Database:** PostgreSQL
+- **Containerization:** Docker
+- **Orchestration:** Kubernetes
 - **Logging:** Log Package
 - **API Format:** RESTful, JSON
 
@@ -43,6 +48,16 @@ README.md             # Project Documentation
 LICENSE               # License Information
 go.mod                # Module Dependencies
 go.sum                # Dependency Checksums
+dockerfile            # Dockerfile for building the image
+docker-compose.yaml   # Docker Compose file for multi-container setup
+dockerfile_web-server:1.0 
+dockerfile_web-server-ubuntu:1.0
+kubernetes/           # Kubernetes configuration files
+  ├── postgres.yaml
+  ├── postgres-config.yaml
+  ├── postgres-secret.yaml
+  ├── server.yaml
+
 ```
 
 ---
@@ -52,6 +67,7 @@ go.sum                # Dependency Checksums
 ### Prerequisites
 - Install **Go (v1.24 or latest)**
 - Install and set up **PostgreSQL**
+- Install **Docker** and **Kubernetes**
 
 ### 1️⃣ Clone the Repository
 ```sh
@@ -60,7 +76,7 @@ cd school_api_postgres
 ```
 
 ### 2️⃣ Configure Environment Variables
-Create a `.env` file in the root directory is exists then add your PostgreSQL credentials:
+If you don't use docker-compose or kubernetes then, create a `.env` file in the root directory add your PostgreSQL credentials:
 ```env
 DB_HOST=localhost
 DB_PORT=5433
@@ -80,6 +96,25 @@ go run main.go
 ```
 
 The server will start at `http://localhost:8080`
+
+---
+
+### 6️⃣ Run Docker Compose
+For multi-container setup, you can use Docker Compose:
+```sh
+docker-compose up -d
+```
+
+---
+
+### 7️⃣ Deploy to Kubernetes
+If you have your Kubernetes cluster set up, you can deploy using:
+```sh
+kubectl apply -f kubernetes/postgres-config.yaml
+kubectl apply -f kubernetes/postgres-secret.yaml
+kubectl apply -f kubernetes/postgres.yaml
+kubectl apply -f kubernetes/server.yaml
+```
 
 ---
 
@@ -218,6 +253,12 @@ The API implements **pagination** for efficient handling of large datasets, allo
 
 ### ⚡ Bulk Insert with Batching
 Bulk insert allows efficiently adding multiple records in a single request, reducing the number of database transactions and improving performance. Also did batching so that query does not exceed.
+
+### 🌐 Docker Hub Integration
+Images for the API and web server have been uploaded to Docker Hub, allowing for easy deployment and version management.
+
+### ☸️ Kubernetes Configuration
+The project includes Kubernetes configuration files for deploying the application in a cluster, ensuring scalability and manageability.
 
 ---
 
