@@ -24,7 +24,7 @@ import (
 	"golang.org/x/time/rate"
 
 	//"github.com/gorilla/mux"
-	"github.com/joho/godotenv"
+
 	_ "github.com/lib/pq" //
 )
 
@@ -104,10 +104,15 @@ func rateLimitMiddlewareClientIP(next http.Handler) http.Handler {
 
 func initDB() {
 
-	errEnv := godotenv.Load()
-	if errEnv != nil {
-		log.Fatal("Error loading .env file")
-	}
+	// removed this beacuse when using docker-compose I want to send the variables from
+	// docker compose environ tachara eta compose korte dicchilo na karon log.Fatal .env file na paile
+
+	/*
+		errEnv := godotenv.Load()
+		if errEnv != nil {
+			log.Fatal("Error loading .env file")
+		}
+	*/
 
 	// loading from .env
 	DB_USER := os.Getenv("DB_USER")
