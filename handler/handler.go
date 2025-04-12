@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	"golang.org/x/time/rate"
 
 	//"github.com/gorilla/mux"
@@ -102,17 +103,38 @@ func rateLimitMiddlewareClientIP(next http.Handler) http.Handler {
 	})
 }
 
+const (
+	// APIKeyHeader ... za holo request er header
+	APIKeyHeader = "X-API-Key"
+	// ValidAPIKey ... holo amar api key zar maddhome validate kortechi
+	// ValidAPIKey = "sadat-api-key-1123" //in kubernetes I used secret volume or configmap za pod use korbe In production, use env variable or database
+)
+
+func apiKeyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiKey := r.Header.Get(APIKeyHeader)
+		errEnv := godotenv.Load()
+		if errEnv != nil {
+			log.Fatal("Error loading .env file")
+		}
+		ValidAPIKey := os.Getenv("ValidAPIKey")
+		if apiKey != ValidAPIKey {
+			http.Error(w, "Invalid API Key", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func initDB() {
 
 	// removed this beacuse when using docker-compose I want to send the variables from
 	// docker compose environ tachara eta compose korte dicchilo na karon log.Fatal .env file na paile
 
-	/*
-		errEnv := godotenv.Load()
-		if errEnv != nil {
-			log.Fatal("Error loading .env file")
-		}
-	*/
+	errEnv := godotenv.Load()
+	if errEnv != nil {
+		log.Fatal("Error loading .env file")
+	}
 
 	// loading from .env
 	DB_USER := os.Getenv("DB_USER")
@@ -162,6 +184,8 @@ func Handle() {
 
 		//r.Use(rateLimitMiddleware) // Apply rate limiting to all routes under /api/v1
 
+		// eida use korchi authentication er jonno fir all routes below
+		r.Use(apiKeyMiddleware)
 		// Group routes that need rate limiting
 		r.Group(func(r chi.Router) {
 			// Apply rate limiting only to these routes
