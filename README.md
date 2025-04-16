@@ -14,6 +14,7 @@ A simple RESTful API for managing students in a school database using **Go (Gola
 - **🔒 Environment Variables:** Securely manage database connection details.
 - **🗄️ PostgreSQL Database Connection:** Persistent data storage with PostgreSQL.
 - **🚯 IP-Based Rate Limiting:** Prevent abuse by limiting requests per IP.
+- **🔑 API Key Authentication:** Protect endpoints with API Key middleware.
 - **🛑 Graceful Shutdown:** Ensure smooth termination of the API.
 - **🐳 Docker Support:** Easily deploy the application using Docker.
 - **☸️ Kubernetes Deployment:** Scalable and manageable deployment in Kubernetes.
@@ -52,11 +53,21 @@ dockerfile            # Dockerfile for building the image
 docker-compose.yaml   # Docker Compose file for multi-container setup
 dockerfile_web-server:1.0 
 dockerfile_web-server-ubuntu:1.0
-kubernetes/           # Kubernetes configuration files
+kubernetes/           # Basic k8s configuration files
   ├── postgres.yaml
   ├── postgres-config.yaml
   ├── postgres-secret.yaml
   ├── server.yaml
+
+kubernetes_updated/   # Kubernetes configuration updated files
+  ├── auth-secret-volume.yaml  # Volume for API key secrets
+  ├── ingress-nginx.yaml       # Ingress controller
+  ├── postgres.yaml            # PostgreSQL deployment
+  ├── persistent-volume.yaml   # Persistent volume for PostgreSQL
+  ├── postgres-config.yaml     # ConfigMap for PostgreSQL
+  ├── postgres-secret.yaml     # Secrets for PostgreSQL credentials
+  ├── server.yaml              # Go server deployment with replicas
+  ├── server-ingress.yaml      # Ingress for Go server
 
 ```
 
@@ -83,12 +94,61 @@ DB_PORT=5433
 DB_USER=sadat
 DB_PASSWORD=11235813
 DB_NAME=school_db
+API_KEY=sadat-api-key-1123
 ```
+
+> **Note**: Update `.env` with your actual database credentials and API key. For Docker or Kubernetes, these are managed via secrets.
 
 ### 3️⃣ Install Dependencies
 ```sh
 go mod tidy
 ```
+
+### 4️⃣ Set Up the Database
+#### Prerequisites
+- PostgreSQL installed
+- Command-line access
+
+#### Steps
+1. **Start PostgreSQL**  
+   ```bash
+   sudo service postgresql start
+   ```
+
+2. **Log in**  
+   ```bash
+   psql -h localhost -p 5433 -U sadat -d postgres
+   ```
+   Password: `11235813`
+
+3. **Create Database**  
+   ```sql
+   CREATE DATABASE school_db;
+   ```
+
+4. **Connect**  
+   ```sql
+   \c school_db
+   ```
+
+5. **Create Table**  
+   ```sql
+   CREATE TABLE students (
+       id SERIAL PRIMARY KEY,
+       name VARCHAR(100) NOT NULL,
+       age INT NOT NULL,
+       class INTEGER NOT NULL CHECK (class BETWEEN 1 AND 10)
+   );
+   ```
+
+#### Troubleshooting
+- **Connection Issues**: Check service, credentials, and port.
+- **Permissions**: Ensure `sadat` has proper privileges.
+- **Port Conflict**: Update `DB_PORT` if `5433` is in use.
+
+#### Next Steps
+- Insert data into `students`.
+- Connect application to database.
 
 ### 4️⃣ Run the Application
 ```sh
@@ -107,32 +167,277 @@ docker-compose up -d
 
 ---
 
-### 7️⃣ Deploy to Kubernetes
-If you have your Kubernetes cluster set up, you can deploy using:
+## ☸️ Kubernetes Deployment
+
+The project includes comprehensive Kubernetes configuration for robust, scalable deployment in production environments.
+
+### 🧩 Kubernetes Components
+
+- **ConfigMap:** Store non-sensitive configuration data with `postgres-config.yaml`
+- **Secrets:** Securely manage sensitive data like database credentials with `postgres-secret.yaml`
+- **Persistent Volume:** Ensure data persistence across pod restarts with `persistent-volume.yaml`
+- **Deployment:** Deploy the PostgreSQL database and API server with replicas
+- **Services:** Expose the API and database internally and externally
+- **Ingress:** Route external traffic to services with `server-ingress.yaml` and `ingress-nginx.yaml`
+- **Volume Mounts:** Mount configuration and secrets securely with `auth-secret-volume.yaml`
+
+All resources are in the `school-system` namespace.
+
+### 🚢 Deployment Steps
+
+#### Prerequisites
+- **Kubernetes Cluster**: Use Minikube/Kind for local testing or a cloud provider (e.g., GKE, EKS, AKS).
+
+- **kubectl**: Installed and configured to interact with your cluster.
+
+- **Docker Hub Access**: Ensure the `nsshohag/web-server-without-dot-env-auth:1.0` image is accessible.
+
+
+#### 1️⃣ Create Namespace
+
 ```sh
-kubectl apply -f kubernetes/postgres-config.yaml
-kubectl apply -f kubernetes/postgres-secret.yaml
-kubectl apply -f kubernetes/postgres.yaml
-kubectl apply -f kubernetes/server.yaml
+kubectl create namespace school-system
 ```
 
----
+#### 2️⃣ Apply Persistent Volume Configuration
 
-## 🛠️ Database Setup
-
-Run the following SQL query in your PostgreSQL database:
-```sql
-CREATE TABLE students (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    age INT NOT NULL,
-    class INTEGER NOT NULL CHECK (class BETWEEN 1 AND 10)
-);
+```sh
+kubectl apply -f kubernetes_updated/persistent-volume.yaml
 ```
+
+#### 3️⃣ Apply ConfigMap and Secrets
+
+```sh
+kubectl apply -f kubernetes_updated/postgres-config.yaml
+kubectl apply -f kubernetes_updated/postgres-secret.yaml
+kubectl apply -f kubernetes_updated/auth-secret-volume.yaml
+```
+
+#### 4️⃣ Deploy PostgreSQL Database
+
+```sh
+kubectl apply -f kubernetes_updated/postgres.yaml
+```
+
+#### 5️⃣ Create Database Table
+
+To create the `students` table in PostgreSQL:
+
+1. **Find the PostgreSQL Pod**:
+
+   ```sh
+   kubectl get pods -n school-system -l app=postgres
+   ```
+
+   Example output:
+
+   ```
+   NAME                                 READY   STATUS    RESTARTS   AGE
+   postgres-deployment-5f8b6c7d8-xyz   1/1     Running   0          5m
+   ```
+
+2. **Access the Pod**:
+
+   ```sh
+   kubectl exec -it postgres-deployment-5f8b6c7d8-xyz -n school-system -- bash
+   ```
+
+3. **Connect to PostgreSQL**:
+
+   ```sh
+   psql -U sadat -d school_db
+   ```
+
+   > **Note**: Use values from `postgres-secret` for username and database.
+
+4. **Run SQL Query**:
+
+   ```sql
+   CREATE TABLE students (
+       id SERIAL PRIMARY KEY,
+       name VARCHAR(100) NOT NULL,
+       age INT NOT NULL,
+       class INTEGER NOT NULL CHECK (class BETWEEN 1 AND 10)
+   );
+   ```
+
+5. **Verify Table**:
+
+   ```sql
+   \dt
+   ```
+
+6. **Exit**:
+
+   ```sql
+   \q
+   exit
+   ```
+
+#### 6️⃣ Deploy API Server with 3 Replicas
+
+```sh
+kubectl apply -f kubernetes_updated/server.yaml
+```
+
+#### 7️⃣ Set Up Services and Ingress
+
+```sh
+kubectl apply -f kubernetes_updated/ingress-nginx.yaml
+kubectl apply -f kubernetes_updated/server-ingress.yaml
+```
+
+### 📡 Sending Requests to the API
+
+After deployment, send requests to the API using the `X-API-Key` header:
+
+```
+-H "X-API-Key: sadat-api-key-1123"
+```
+
+#### Option 1: Via Ingress (Production)
+
+If using `sadat.com` (from `server-ingress.yaml`):
+
+1. **Configure DNS**: Point `sadat.com` to the Ingress IP. For Minikube:
+
+   ```sh
+   minikube ip
+   ```
+
+2. **Send Request**:
+
+   Get all students:
+
+   ```sh
+   curl -H "X-API-Key: sadat-api-key-1123" http://sadat.com/api/v1/students
+   ``` 
+   **Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Nazmus Sadat Shohag",
+    "age": 24,
+    "class": 10
+  },
+    {
+    "id": 2,
+    "name": "SH Rony",
+    "age": 24,
+    "class": 10
+  }
+]
+```   
+3. **Troubleshooting**: If `sadat.com` doesn’t resolve, get the Ingress IP:
+
+   ```sh
+   kubectl get ingress -n school-system
+   ```
+
+   Use: `http://<ingress-ip>/api/v1/students`.
+
+#### Option 2: Via NodePort (Testing)
+
+Use the `server-service-node` NodePort (30100):
+
+1. **Get Node IP**:
+
+   For Minikube:
+
+   ```sh
+   minikube ip
+   ```
+
+   For cloud clusters:
+
+   ```sh
+   kubectl get nodes -o wide
+   ```
+
+2. **Send Request**:
+
+   ```sh
+   curl -H "X-API-Key: sadat-api-key-1123" http://<node-ip>:30100/api/v1/students
+   ```
+
+#### Option 3: Port-Forwarding (Local Testing)
+
+For local development:
+
+1. **Port-Forward**:
+
+   ```sh
+   kubectl port-forward svc/server-service 8080:8080 -n school-system
+   ```
+
+2. **Send Request**:
+
+   ```sh
+   curl -H "X-API-Key: sadat-api-key-1123" http://localhost:8080/api/v1/students
+   ```
+
+3. **Stop**: Press `Ctrl+C`.
+
+### 📊 Monitoring and Scaling
+
+- **Check Deployment Status**:
+
+  ```sh
+  kubectl get deployments -n school-system
+  kubectl get pods -n school-system
+  kubectl get services -n school-system
+  ```
+
+- **Scale Replicas**:
+
+  ```sh
+  kubectl scale deployment server-deployment --replicas=5 -n school-system
+  ```
+
+- **View Logs**:
+
+  ```sh
+  kubectl logs <pod-name> -n school-system
+  ```
+
+  Get pod names:
+
+  ```sh
+  kubectl get pods -n school-system
+  ```
+
+- **Troubleshoot PostgreSQL**:
+
+  ```sh
+  kubectl describe svc postgres-service -n school-system
+  ```
+
+### 🛠️ Notes for Cloners
+
+- **Clone**: Ensure `kubernetes_updated/` contains all YAML files.
+- **Secrets**: Set up `postgres-secret` and `auth-volume` with correct values.
+- **ConfigMap**: Verify `postgres-config.yaml` sets `postgres-url` to `postgres-service`.
+
+- **API Key**: Use `sadat-api-key-1123` for requests.
+- **Database**: Create the `students` table manually after PostgreSQL deployment.
+
 
 ---
 
 ## 📖 API Endpoints
+
+### Base URL
+
+`http://localhost:8080/api/v1`
+
+### Authentication
+
+Include the API key in the request header:
+
+```
+X-API-Key: sadat-api-key-1123
+```
 
 ### Student Routes
 
@@ -244,7 +549,10 @@ The API connects to a **PostgreSQL** database for persistent data storage. Conne
 
 ### 🚯 IP-Based Rate Limiting
 To prevent abuse, the API enforces **IP-based rate limiting**, restricting excessive requests from the same IP within a specific timeframe.
+### 🔐 API Key Authentication
+The API uses **API Key Authentication** to protect endpoints. Each request must include a valid API key in the header:
 
+-H "X-API-Key: sadat-api-key-1123"
 ### 🛑 Graceful Shutdown
 The API supports **graceful shutdown**, ensuring proper cleanup of resources when the server is stopped, preventing issues like lingering database connections. When the server gets a shutdown request, it finishes ongoing requests for a specific time, and during that time, it does not take any new requests.
 
