@@ -21,7 +21,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/mux"
-	"github.com/joho/godotenv"
 	"golang.org/x/time/rate"
 
 	//"github.com/gorilla/mux"
@@ -113,10 +112,15 @@ const (
 func apiKeyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiKey := r.Header.Get(APIKeyHeader)
-		errEnv := godotenv.Load()
-		if errEnv != nil {
-			log.Fatal("Error loading .env file")
-		}
+
+		/*
+			        // this is for .env file but in docker we are using environment variables
+					errEnv := godotenv.Load()
+					if errEnv != nil {
+						log.Fatal("Error loading .env file")
+					}
+		*/
+
 		ValidAPIKey := os.Getenv("ValidAPIKey")
 		if apiKey != ValidAPIKey {
 			http.Error(w, "Invalid API Key", http.StatusUnauthorized)
@@ -131,12 +135,14 @@ func initDB() {
 	// removed this beacuse when using docker-compose I want to send the variables from
 	// docker compose environ tachara eta compose korte dicchilo na karon log.Fatal .env file na paile
 
-	errEnv := godotenv.Load()
-	if errEnv != nil {
-		log.Fatal("Error loading .env file")
-	}
+	/*
+		errEnv := godotenv.Load()
+		if errEnv != nil {
+			log.Fatal("Error loading .env file")
+		}
+			// loading from .env
+	*/
 
-	// loading from .env
 	DB_USER := os.Getenv("DB_USER")
 	DB_PASSWORD := os.Getenv("DB_PASSWORD")
 	DB_NAME := os.Getenv("DB_NAME")
