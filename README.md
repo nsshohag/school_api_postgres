@@ -4,6 +4,47 @@
 
 A simple RESTful API for managing students in a school database using **Go (Golang)**, **PostgreSQL**, and **Go chi**.
 
+![Alt Text](./K3.svg)
+
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Tech Stack](#-tech-stack)
+- [Project Structure](#-project-structure)
+- [Installation & Setup](#-installation--setup)
+  - [Prerequisites](#prerequisites)
+  - [Clone the Repository](#1-clone-the-repository)
+  - [Configure Environment Variables](#2-configure-environment-variables)
+  - [Install Dependencies](#3-install-dependencies)
+  - [Set Up the Database](#4-set-up-the-database)
+  - [Run the Application](#4-run-the-application)
+  - [Run Docker Compose](#6-run-docker-compose)
+- [Kubernetes Deployment](#-kubernetes-deployment)
+  - [Kubernetes Components](#-kubernetes-components)
+  - [Deployment Steps](#-deployment-steps)
+  - [Sending Requests to the API](#-sending-requests-to-the-api)
+  - [Monitoring and Scaling](#-monitoring-and-scaling)
+  - [Notes for Cloners](#-notes-for-cloners)
+- [API Endpoints](#-api-endpoints)
+  - [Base URL](#base-url)
+  - [Authentication](#authentication)
+  - [Student Routes](#student-routes)
+- [Additional Features](#-additional-features)
+  - [PostgreSQL Database Connection](#-postgresql-database-connection)
+  - [IP-Based Rate Limiting](#-ip-based-rate-limiting)
+  - [API Key Authentication](#-api-key-authentication)
+  - [Graceful Shutdown](#-graceful-shutdown)
+  - [Pagination](#-pagination)
+  - [Bulk Insert with Batching](#-bulk-insert-with-batching)
+  - [Docker Hub Integration](#-docker-hub-integration)
+  - [Kubernetes Configuration](#-kubernetes-configuration)
+  - [Continuous Integration/Continuous Deployment](#-continuous-integrationcontinuous-deployment)
+- [License](#-license)
+- [Contributing](#-contributing)
+- [Author](#-author)
+
+---
+
 ## 🚀 Features
 
 - **🔄 CRUD Operations:** Create, Read, Update, Delete students.
@@ -19,6 +60,7 @@ A simple RESTful API for managing students in a school database using **Go (Gola
 - **🐳 Docker Support:** Easily deploy the application using Docker.
 - **☸️ Kubernetes Deployment:** Scalable and manageable deployment in Kubernetes.
 - **🌐 Docker Hub Integration:** Uploaded images are available on Docker Hub.
+- **🔄 CI/CD Pipeline:** GitHub Actions workflow for automated Docker image building and publishing.
 
 ---
 
@@ -30,6 +72,7 @@ A simple RESTful API for managing students in a school database using **Go (Gola
 - **Orchestration:** Kubernetes
 - **Logging:** Log Package
 - **API Format:** RESTful, JSON
+- **CI/CD:** GitHub Actions
 
 ---
 
@@ -69,6 +112,8 @@ kubernetes_updated/   # Kubernetes configuration updated files
   ├── server.yaml              # Go server deployment with replicas
   ├── server-ingress.yaml      # Ingress for Go server
 
+.github/workflows/    # GitHub Actions workflows
+  ├── docker-image-ci-build-push-dockerhub.yml  # CI workflow for Docker build/push
 ```
 
 ---
@@ -567,6 +612,22 @@ Images for the API and web server have been uploaded to Docker Hub, allowing for
 
 ### ☸️ Kubernetes Configuration
 The project includes Kubernetes configuration files for deploying the application in a cluster, ensuring scalability and manageability.
+
+
+### 🔄 Continuous Integration/Continuous Deployment
+The project uses GitHub Actions for CI/CD, automatically building Docker images and pushing them to Docker Hub whenever changes are committed to the main branch. This ensures that the latest version of the application is always available and ready for deployment.
+
+#### GitHub Actions Workflow
+The CI/CD pipeline is defined in `.github/workflows/docker-image-ci-build-push-dockerhub.yml` and performs the following steps:
+
+1. **Trigger**: Activates on push to the main branch or pull requests
+2. **Checkout**: Clones the repository
+3. **Docker Login**: Authenticates with Docker Hub using repository secrets
+4. **Setup QEMU**: Prepares for multi-platform builds
+5. **Setup Docker Buildx**: Configures the Docker build environment
+6. **Build and Push**: Builds the Docker image and pushes it to Docker Hub with a tag based on the GitHub run number
+
+Each commit to the main branch generates a new Docker image with an incremented tag, ensuring proper versioning and traceability.
 
 ---
 
