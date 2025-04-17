@@ -1,6 +1,6 @@
 name: Docker Image C
 
-on:    # eigula holo events za trigger korbe
+on:    # eigula holo events za trigger korbe ci/cd
   push:
     branches: [ "main" ]
   pull_request:
